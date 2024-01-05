@@ -47,15 +47,43 @@ if __name__=="__main__":
         col("data.timestamp").cast(TimestampType()).alias("timestamp") 
     )
 
-    url = "jdbc:mariadb://localhost:3306/ISSDB"
-    properties = {
-      "user": "admin",
-      "password": "password",
-      "driver": "org.mariadb.jdbc.Driver"
-    }
+    dbOptions = {"host": "localhost", 'port': 3306,
+             "user": "admin", "password": "password"}
+    dbSchema = 'ISSDB'
+    #windowDuration = '5 minutes'
+    #slidingDuration = '1 minute'
 
-    mode = "overwrite"
-    df.write.jdbc(url=url, table="ISStabelle", mode=mode, properties=properties)
+
+    def saveToDatabase(batchDataframe, batchId):
+        # Define function to save a dataframe to mysql
+        def save_to_db(iterator):
+            # Connect to database and use schema
+            session = mysqlx.get_session(dbOptions)
+            session.sql("USE ISStabelle").execute()
+
+            for row in iterator:
+                # Ändere die Werte in der aktuellen Zeile auf "test"
+                row.id = 12345678912
+                row.message = "test"
+                row.latitude = "test"
+                row.longitude = "test"
+                row.timestamp = "test"
+                # Run upsert (insert or update existing)
+                sql = session.sql("INSERT INTO ISStabelle "
+                                "(id, message, latitude, longitude, timestamp) VALUES (?, ?, ?, ?, ?) ")
+                sql.bind(row.id, row.message, row.latitude, row.longitude, row.timestamp).execute()
+
+            session.close()
+
+        # Perform batch UPSERTS per data partition
+        batchDataframe.foreachPartition(save_to_db)
+
+    # Example Part 7
+
+    dbInsertStream = df.writeStream \
+        .outputMode("append") \
+        .foreachBatch(saveToDatabase) \
+        .start()
 
 
     # Definieren Sie die Ausgabelogik (z. B. Console oder Dateisystem)
